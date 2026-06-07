@@ -6066,6 +6066,34 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/session/export":
         return _handle_session_export(handler, parsed)
 
+    # ── Session Questions (GET) ──
+    if parsed.path.startswith("/api/session/") and parsed.path.endswith("/questions"):
+        session_id = parsed.path[len("/api/session/"):-len("/questions")]
+        if not session_id:
+            return bad(handler, "Session not found", 404)
+        try:
+            s = get_session(session_id)
+        except KeyError:
+            return bad(handler, "Session not found", 404)
+        questions = []
+        user_msg_count = 0
+        for idx, msg in enumerate(s.messages or []):
+            if isinstance(msg, dict) and msg.get('role') == 'user':
+                text = (msg.get('content') or '').strip()
+                if text:
+                    preview = text[:100]
+                    if len(text) > 100:
+                        preview += '...'
+                    questions.append({
+                        'message_index': idx,
+                        'question_number': user_msg_count + 1,
+                        'timestamp': msg.get('timestamp', 0),
+                        'text': text,
+                        'preview': preview,
+                    })
+                    user_msg_count += 1
+        return j(handler, {'questions': questions, 'total': len(questions)})
+
     if parsed.path == "/api/workspaces":
         return j(
             handler,

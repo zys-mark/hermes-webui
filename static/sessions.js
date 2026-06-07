@@ -1110,6 +1110,15 @@ async function loadSession(sid){
     // Stale? A newer loadSession() call has already started (#1060).
     if (_loadingSessionId !== sid) return;
 
+    // Load the full message history so the user sees all messages at once
+    // (no "Load earlier messages" button, no incremental pagination).
+    if (typeof _ensureAllMessagesLoaded === 'function') {
+      await _ensureAllMessagesLoaded();
+    }
+    // Stale again? _ensureAllMessagesLoaded awaited; another loadSession() may
+    // have started while we were fetching.
+    if (_loadingSessionId !== sid) return;
+
     // Restore any queued message that survived page refresh via sessionStorage.
     if(typeof queueSessionMessage==='function'){
       try{
@@ -1160,6 +1169,7 @@ async function loadSession(sid){
       if(typeof ensureLiveWorklogShell==='function') ensureLiveWorklogShell();
       else appendThinking();
       loadDir('.');
+      if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
       updateQueueBadge(sid);
       startApprovalPolling(sid);
       if(typeof startClarifyPolling==='function') startClarifyPolling(sid);
@@ -1172,6 +1182,7 @@ async function loadSession(sid){
       setComposerStatus('');
       updateQueueBadge(sid);
       syncTopbar();renderMessages(sameSessionForceReload?{preserveScroll:true}:undefined);
+      if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
       if(typeof resumeManualCompressionForSession==='function') resumeManualCompressionForSession(sid);
       const _dirP=loadDir('.');
       // Workspace refresh is guarded by session id inside loadDir(); do not
@@ -2279,6 +2290,7 @@ async function _loadOlderMessages() {
     _messagesTruncated = !!responseSession._messages_truncated;
     _oldestIdx = responseSession._messages_offset || 0;
     renderMessages({ preserveScroll: true });
+    if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
     if (container) {
       // Prepending older messages must not teleport the reader. Preserve the
       // currently visible viewport by adding the inserted height to scrollTop.

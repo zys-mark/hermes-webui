@@ -145,10 +145,11 @@ if(typeof document !== 'undefined'){
 }
 
 function switchWorkspacePanelTab(tab){
-  _workspacePanelActiveTab = tab === 'artifacts' ? 'artifacts' : 'files';
+  _workspacePanelActiveTab = (tab === 'artifacts' || tab === 'questions') ? tab : 'files';
   _setWorkspacePanelTabDataset();
   const filesTab = $('workspaceFilesTab');
   const artifactsTab = $('workspaceArtifactsTab');
+  const questionsTab = $('workspaceQuestionsTab');
   if(filesTab){
     filesTab.classList.toggle('active', _workspacePanelActiveTab === 'files');
     filesTab.setAttribute('aria-selected', _workspacePanelActiveTab === 'files' ? 'true' : 'false');
@@ -157,9 +158,16 @@ function switchWorkspacePanelTab(tab){
     artifactsTab.classList.toggle('active', _workspacePanelActiveTab === 'artifacts');
     artifactsTab.setAttribute('aria-selected', _workspacePanelActiveTab === 'artifacts' ? 'true' : 'false');
   }
+  if(questionsTab){
+    questionsTab.classList.toggle('active', _workspacePanelActiveTab === 'questions');
+    questionsTab.setAttribute('aria-selected', _workspacePanelActiveTab === 'questions' ? 'true' : 'false');
+  }
   const artifacts = $('workspaceArtifacts');
   if(artifacts) artifacts.hidden = _workspacePanelActiveTab !== 'artifacts';
+  const questions = $('workspaceQuestions');
+  if(questions) questions.hidden = _workspacePanelActiveTab !== 'questions';
   if(_workspacePanelActiveTab === 'artifacts') renderSessionArtifacts();
+  if(_workspacePanelActiveTab === 'questions' && typeof loadQuestionsPanel === 'function') loadQuestionsPanel();
 }
 
 const ARTIFACT_IGNORE_RE = /(^|\/)(?:\.git|\.hg|\.svn|node_modules|\.venv|venv|__pycache__|dist|build|\.next|\.cache)(?:\/|$)/;

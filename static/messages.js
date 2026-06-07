@@ -3299,6 +3299,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
             _messageRenderWindowSize=Math.max(typeof _currentMessageRenderWindowSize==='function'?_currentMessageRenderWindowSize():50, _messageRenderableMessageCount());
           }
           syncTopbar();renderMessages({preserveScroll:true});
+          if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
           if(shouldFollowOnDone&&typeof scrollToBottom==='function') scrollToBottom();
           if(typeof noteWorkspaceMutationsFromToolCalls==='function') noteWorkspaceMutationsFromToolCalls(S.toolCalls);
           loadDir('.', { preservePreview: true });
@@ -3412,6 +3413,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       if(typeof setCompressionUi==='function'){
         setCompressionUi(state);
       }
+      if(typeof renderMessages==='function') renderMessages({preserveScroll:true});
+      if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
       snapshotLiveTurn();
     });
 
@@ -3447,6 +3450,8 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       else window._compressionUi=null;
       if(typeof _setCompressionSessionLock==='function') _setCompressionSessionLock(null);
       if(!S.busy&&typeof renderMessages==='function') renderMessages();
+      if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
+      showToast(message||'Context compressed', 8000);
     });
 
     source.addEventListener('metering',e=>{
@@ -3540,6 +3545,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           _markSessionViewed((S.session&&S.session.session_id)||activeSid, S.messages.length);
           renderMessages({preserveScroll:true});
         }
+        if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
       }else if(typeof trackBackgroundError==='function'){
         const _errTitle=(typeof _allSessions!=='undefined'&&_allSessions.find(s=>s.session_id===activeSid)||{}).title||null;
         trackBackgroundError(activeSid,_errTitle,d.message||'Error');
@@ -3811,6 +3817,7 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       S.activeStreamId=null;
       clearLiveToolCards();if(!assistantText)removeThinking();
       S.messages.push({role:'assistant',content:'**Connection interrupted:** The browser lost the live SSE connection before the response finished. If the worker completed, reopening this session should restore the settled transcript.'});renderMessages({preserveScroll:true});
+      if(typeof loadQuestionsPanelDebounced==='function') loadQuestionsPanelDebounced();
       _markSessionViewed(activeSid, S.messages.length);
     }else{
       if(typeof trackBackgroundError==='function'){

@@ -8641,3 +8641,205 @@ function updateNotificationPermissionStatus(){
   const perm=Notification.permission||'default';
   el.textContent=t('notifications_permission_status', perm);
 }
+
+// ── Questions Panel ─────────────────────────────────────────────────────────
+
+let _currentQuestionsList = [];
+let _selectedQuestionIndex = null;
+let _questionsPanelMode = 'empty';
+let _questionsLoadingTimer = null;
+
+async function loadQuestionsPanel() {
+  if (!S || !S.session) return;
+  const sessionId = S.session.session_id;
+  if (!sessionId) return;
+  try {
+    const response = await fetch(
+      `api/session/${encodeURIComponent(sessionId)}/questions`,
+      { method: 'GET', credentials: 'include', headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!response.ok) {
+      _currentQuestionsList = [];
+      _questionsPanelMode = 'empty';
+      renderQuestionsPanel();
+      return;
+    }
+    const data = await response.json();
+    _currentQuestionsList = data.questions || [];
+    _questionsPanelMode = _currentQuestionsList.length > 0 ? 'list' : 'empty';
+    _selectedQuestionIndex = null;
+    renderQuestionsPanel();
+  } catch (err) {
+    console.error('Failed to load questions:', err);
+    _questionsPanelMode = 'error';
+    renderQuestionsPanel();
+  }
+}
+
+function loadQuestionsPanelDebounced() {
+  if (_questionsLoadingTimer) clearTimeout(_questionsLoadingTimer);
+  _questionsLoadingTimer = setTimeout(function() {
+    loadQuestionsPanel();
+    _questionsLoadingTimer = null;
+  }, 300);
+}
+
+function renderQuestionsPanel() {
+  const container = $('workspaceQuestions');
+  if (!container) return;
+  container.innerHTML = '';
+  // Update count badge
+  const countBadge = $('workspaceQuestionsCount');
+  if (countBadge) countBadge.textContent = _currentQuestionsList.length;
+
+  if (_questionsPanelMode === 'empty') {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'questions-empty';
+    emptyDiv.textContent = typeof t === 'function' ? t('no_questions_yet', 'No questions yet') : 'No questions yet';
+    container.appendChild(emptyDiv);
+    return;
+  }
+  if (_questionsPanelMode === 'error') {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'questions-error';
+    errorDiv.textContent = typeof t === 'function' ? t('failed_load_questions', 'Failed to load questions') : 'Failed to load questions';
+    container.appendChild(errorDiv);
+    return;
+  }
+  const listDiv = document.createElement('div');
+  listDiv.className = 'questions-list';
+  _currentQuestionsList.forEach(function(q, idx) {
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'question-item';
+    if (idx === _selectedQuestionIndex) itemDiv.classList.add('selected');
+    itemDiv.setAttribute('title', q.text || '');
+
+    const numberBadge = document.createElement('span');
+    numberBadge.className = 'question-number';
+    numberBadge.textContent = q.question_number;
+
+    const textDiv = document.createElement('div');
+    textDiv.className = 'question-item-text';
+
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'question-preview';
+    previewDiv.textContent = q.preview;
+
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'question-timestamp';
+    timestampDiv.textContent = formatQuestionTime(q.timestamp);
+
+    textDiv.appendChild(previewDiv);
+    textDiv.appendChild(timestampDiv);
+    itemDiv.appendChild(numberBadge);
+    itemDiv.appendChild(textDiv);
+
+    itemDiv.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectQuestion(idx);
+    });
+    listDiv.appendChild(itemDiv);
+  });
+  container.appendChild(listDiv);
+}
+
+function selectQuestion(questionIndex) {
+  if (!Array.isArray(_currentQuestionsList) || questionIndex < 0 || questionIndex >= _currentQuestionsList.length) return;
+  var q = _currentQuestionsList[questionIndex];
+  // message_index is the absolute index in the full server-side message list.
+  // The browser-side S.messages may be a subset (pagination); DOM ids use the
+  // browser-relative position: browserIdx = serverIdx - _oldestIdx.
+  var serverIdx = q.message_index;
+  _selectedQuestionIndex = questionIndex;
+  renderQuestionsPanel();
+  _scrollToQuestionMessage(serverIdx);
+}
+
+// serverIdx: absolute message index from the server-side full message list.
+// The browser may have loaded only a tail window (pagination), so DOM ids are
+// browser-relative: browserIdx = serverIdx - (_oldestIdx || 0).
+function _scrollToQuestionMessage(serverIdx) {
+  // Helper: cancel pending auto-scroll-to-bottom, unpin, then scroll.
+  function _doScroll(row) {
+    if (typeof _bottomSettleToken !== 'undefined') _bottomSettleToken++;
+    if (typeof _scrollPinned !== 'undefined') _scrollPinned = false;
+    var container = document.getElementById('messages');
+    if (container) {
+      var cr = container.getBoundingClientRect();
+      var rr = row.getBoundingClientRect();
+      var targetTop = container.scrollTop + (rr.top - cr.top) - (cr.height / 2);
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+    }
+    if (typeof _highlightQuestionRow === 'function') _highlightQuestionRow(row);
+  }
+
+  // Compute the browser-relative index, accounting for server-side pagination.
+  function _browserIdx() {
+    var offset = (typeof _oldestIdx !== 'undefined') ? (Number(_oldestIdx) || 0) : 0;
+    return serverIdx - offset;
+  }
+
+  var bi = _browserIdx();
+  if (bi >= 0) {
+    var row = document.getElementById('msg-user-' + bi);
+    if (row) { _doScroll(row); return; }
+  }
+
+  // Row not in DOM.  Either hidden by the render window, or not yet fetched
+  // from the server (pagination).  Load older pages if needed, then expand the
+  // render window and scroll.
+  function _loadAndScroll() {
+    // Re-compute browser index — _loadOlderMessages may have updated _oldestIdx.
+    var bi2 = _browserIdx();
+    // Expand render window to cover all loaded messages.
+    if (typeof _messageRenderWindowSize !== 'undefined' &&
+        typeof _messageRenderableMessageCount === 'function') {
+      _messageRenderWindowSize = _messageRenderableMessageCount();
+    }
+    if (typeof renderMessages === 'function') {
+      renderMessages();
+    }
+    // Cancel bottom-settle that renderMessages may have scheduled.
+    if (typeof _bottomSettleToken !== 'undefined') _bottomSettleToken++;
+    if (typeof _scrollPinned !== 'undefined') _scrollPinned = false;
+    requestAnimationFrame(function() {
+      var bi3 = _browserIdx();
+      if (bi3 >= 0) {
+        var row2 = document.getElementById('msg-user-' + bi3);
+        if (row2) { _doScroll(row2); }
+      }
+    });
+  }
+
+  // Server-side pagination active and the target hasn't been loaded yet?
+  if (bi < 0 && typeof _messagesTruncated !== 'undefined' && _messagesTruncated &&
+      typeof _loadOlderMessages === 'function') {
+    _loadOlderMessages().then(_loadAndScroll);
+    return;
+  }
+
+  // Already loaded — just hidden by render window.
+  _loadAndScroll();
+}
+
+function formatQuestionTime(timestamp) {
+  if (!timestamp) return '';
+  try {
+    const date = new Date(timestamp * 1000);
+    const now = new Date();
+    const diffMs = now - date;
+    const seconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const tFunc = typeof t === 'function' ? t : function(k, d) { return d; };
+    if (seconds < 60) return tFunc('just_now', 'just now');
+    if (minutes < 60) return tFunc('minutes_ago', '{n}m ago').replace('{n}', String(minutes));
+    if (hours < 24) return tFunc('hours_ago', '{n}h ago').replace('{n}', String(hours));
+    if (days < 7) return tFunc('days_ago', '{n}d ago').replace('{n}', String(days));
+    return date.toLocaleDateString();
+  } catch(e) {
+    return '';
+  }
+}
